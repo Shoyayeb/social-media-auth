@@ -41,7 +41,7 @@ app.post('/login', async (req, res) => {
     if (!password || !username) {
         res.send({ status: 400, message: "Incomplete Request" })
     }
-    await usersCollection.findOne({ username: username }).then(async (result) => {
+    await usersCollection.findOne({ username }).then(async (result) => {
         const isPasswordValid = await bcrypt.compare(password, result.hashedPassword);
         isPasswordValid ? res.json({ status: 200, result }) : res.json({ status: 401, message: 'Wrong Password' });
     }).catch((err) => {
@@ -49,6 +49,23 @@ app.post('/login', async (req, res) => {
         res.json({ status: 404, message: 'No user found with this username' });
     });
 });
+
+app.post('/reset', async (req, res) => {
+    const { oldPassword, newPassword, email } = req.body;
+    if (!oldPassword || !newPassword || !email) {
+        res.json({ status: 400, message: "Incomplete Request" })
+    };
+    const user = await usersCollection.findOne({ email });
+    const isPasswordValid = await bcrypt.compare(oldPassword, user.hashedPassword);
+    if (!isPasswordValid) {
+        res.json({ status: 400, message: "Wrong Password" });
+    } else if (isPasswordValid) {
+        const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+        user.hashedPassword = hashedNewPassword;
+        const result = await usersCollection.updateOne({ email }, { $set: user }, { upsert: true });
+        res.json({ status: 200, message: 'password changed' });
+    };
+})
 
 app.get('/', (req, res) => {
     res.json({ status: 400, message: "server running", uri: process.env.URI })
