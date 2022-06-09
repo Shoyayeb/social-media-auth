@@ -3,6 +3,7 @@ const cors = require("cors");
 const { MongoClient } = require("mongodb");
 const bcrypt = require("bcryptjs");
 require("dotenv").config();
+const jwt = require('jsonwebtoken');
 
 const app = express();
 app.use(cors());
@@ -21,6 +22,10 @@ client.connect().then(async () => {
 const database = client.db(process.env.DBNAME);
 const usersCollection = database.collection("users");
 
+/*///////////
+AUTHENTICATION AND RESET OPERATION API HERE
+//////////*/
+
 // CREATING A USER WITH -USERNAME, PASSWORD, EMAIIL
 app.post('/register', async (req, res) => {
     const { email, password, username } = req.body;
@@ -36,6 +41,7 @@ app.post('/register', async (req, res) => {
     }
 });
 
+// LOGIN WITH USERNAME AND PASSWORD
 app.post('/login', async (req, res) => {
     const { password, username } = req.body;
     if (!password || !username) {
@@ -43,13 +49,20 @@ app.post('/login', async (req, res) => {
     }
     await usersCollection.findOne({ username }).then(async (result) => {
         const isPasswordValid = await bcrypt.compare(password, result.hashedPassword);
-        isPasswordValid ? res.json({ status: 200, result }) : res.json({ status: 401, message: 'Wrong Password' });
+        const tokenData = {
+            username: result.username,
+            email: result.email,
+            _id: result._id
+        }
+        const token = jwt.sign(tokenData, process.env.JWTSECRET);
+        isPasswordValid ? res.json({ status: 200, token }) : res.json({ status: 401, message: 'Wrong Password' });
     }).catch((err) => {
         console.log(err, 'error got');
         res.json({ status: 404, message: 'No user found with this username' });
     });
 });
 
+// RESET PASSWORD OF A USER
 app.post('/reset', async (req, res) => {
     const { oldPassword, newPassword, email } = req.body;
     if (!oldPassword || !newPassword || !email) {
@@ -65,7 +78,11 @@ app.post('/reset', async (req, res) => {
         const result = await usersCollection.updateOne({ email }, { $set: user }, { upsert: true });
         res.json({ status: 200, message: 'password changed' });
     };
-})
+});
+
+/*///////////
+SOCIAL MEDIA POSTS CRUD OPERATION API HERE
+//////////*/
 
 app.get('/', (req, res) => {
     res.json({ status: 400, message: "server running", uri: process.env.URI })
