@@ -9,9 +9,11 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const port = process.env.PORT || 5000;
+const { PORT, URI, DBNAME, JWTSECRET } = process.env;
 
-const client = new MongoClient(process.env.URI, {
+const port = PORT || 5000;
+
+const client = new MongoClient(URI, {
     useNewUrlParser: true,
     useUnifiedTopology: true,
 });
@@ -19,8 +21,9 @@ const client = new MongoClient(process.env.URI, {
 client.connect().then(async () => {
     console.log('connected');
 });
-const database = client.db(process.env.DBNAME);
+const database = client.db(DBNAME);
 const usersCollection = database.collection("users");
+const postsCollection = database.collection("posts");
 
 /*///////////
 AUTHENTICATION AND RESET OPERATION API HERE
@@ -54,10 +57,9 @@ app.post('/login', async (req, res) => {
             email: result.email,
             _id: result._id
         }
-        const token = jwt.sign(tokenData, process.env.JWTSECRET);
+        const token = jwt.sign(tokenData, JWTSECRET);
         isPasswordValid ? res.json({ status: 200, token }) : res.json({ status: 401, message: 'Wrong Password' });
     }).catch((err) => {
-        console.log(err, 'error got');
         res.json({ status: 404, message: 'No user found with this username' });
     });
 });
@@ -84,8 +86,37 @@ app.post('/reset', async (req, res) => {
 SOCIAL MEDIA POSTS CRUD OPERATION API HERE
 //////////*/
 
+app.post('/submitpost', async (req, res) => {
+    const { postText } = req.body;
+    if (!postText || !req.headers.authorization) {
+        console.log(req.headers.authorization);
+        res.json({ status: 400, message: "Incomplete Request", body: req.body, header: req.header })
+    }
+    const authHeader = req.headers.authorization;
+    if (authHeader.startsWith("Bearer ")) {
+        const token = authHeader.substring(7, authHeader.length);
+        try {
+            const decoded = jwt.verify(token, JWTSECRET);
+            const { username, email, _id } = decoded;
+            if (!username || !email || !_id) {
+                res.json({ status: 400, message: "Incomplete Request" })
+            };
+            await usersCollection.findOne({ email }).then(async (result) => {
+                const submitPost = await postsCollection.insertOne({ postText, username: result.username, email: result.email });
+                res.json({ status: 200, message: submitPost });
+            }).catch((err) => {
+                res.json({ status: 404, message: "Token invalid" });
+            });
+        } catch (err) {
+            res.json({ status: 400, message: err || "Token invalid" });
+        }
+    } else {
+        res.json({ status: 400, message: "Token Not Found" });
+    }
+});
+
 app.get('/', (req, res) => {
-    res.json({ status: 400, message: "server running", uri: process.env.URI })
+    res.json({ status: 400, message: "server running", uri: URI })
 });
 
 app.listen(port, () => {
